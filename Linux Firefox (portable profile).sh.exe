@@ -1,0 +1,150 @@
+#!/bin/bash
+# Run the installed Firefox with a portable profile on a flash drive.
+# Checks for normal, flatpak, and snap versions and runs them accordingly
+#
+# This file has a .exe extension because Linux will automatically set
+# execute permission for it. Since I might not be using my own computer
+# I won't be able to do any deep configuration.
+
+
+#-----------------------------------------------------------------------------
+# Q: Where are things?
+# A: see below.
+start_dir=$(pwd)
+profile="$start_dir/PortableApps/FirefoxPortable/Data/profile"
+echo "Profile directory $profile"
+
+
+#-----------------------------------------------------------------------------
+# Get the version of the indicated profile
+if [ -f "$profile/compatibility.ini" ]; then
+    profile_version=$(grep -oP 'Version=\K[0-9]+\.[0-9]+' "$profile/compatibility.ini")
+else
+    echo "Error: compatibility.ini not found in $profile"
+    read -p "Do you want to continue anyway? (y/n): " user_input
+    if [[ ! "$user_input" =~ ^[Yy]$ ]]; then
+        echo "Exiting script."
+        exit 1
+    fi
+    profile_version="<UNKNOWN>"
+    echo "Continuing anyway..."
+    # Try to run Firefox with the indicated profile anyway. Do not attempt to update.
+fi
+
+
+#-----------------------------------------------------------------------------
+# Determine Firefox's install status and install method
+if flatpak list | grep -q "org.mozilla.firefox"; then
+    echo "Firefox detected via Flatpak."
+    ff_type="FLATPAK"
+    
+elif snap list | grep -q "^firefox"; then
+    echo "Firefox detected via Snap."
+    ff_type="SNAP"
+        
+elif command -v firefox &> /dev/null; then
+    echo Firefox detected through an unknown method. Assuming standard install.
+    ff_type="STANDARD"
+
+else
+    echo "Firefox is not installed through a known method (standard, Flatpak, or Snap)."
+    exit 1
+
+fi
+
+
+#-----------------------------------------------------------------------------
+# Get the installed Firefox version
+firefox_version=$(firefox --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
+
+
+#-----------------------------------------------------------------------------
+# Check if Firefox version >= profile version
+echo Versions: Firefox:$firefox_version Profile:$profile_version
+if [ "$(printf "%s\n" "$profile_version" "$firefox_version" | sort -V | head -n1)" = "$profile_version" ]; then
+    need_update="NO"
+else
+    if [ "$profile_version" = "<UNKNOWN>" ]; then
+        need_update="NO"
+    else
+        need_update="YES"
+    fi
+fi
+
+
+#-----------------------------------------------------------------------------
+# Update Firefox (if needed)
+
+if [ "$need_update" = "YES" ]; then
+    if [ "$ff_type" = "FLATPAK" ]; then
+        echo "Updating Firefox installed via Flatpak."
+        flatpak update org.mozilla.firefox
+
+    elif [ "$ff_type" = "SNAP" ]; then
+        echo "Updating Firefox installed via Snap."
+        sudo snap refresh firefox
+
+    elif [ "$ff_type" = "STANDARD" ]; then
+        echo "Update Firefox installed via an unknown method. [STUB]"
+        sudo apt update && sudo apt upgrade -y firefox
+        
+    else
+        echo "Firefox needs an update but it's install status is $ff_type. Exiting..."
+        exit 1
+    
+    fi
+
+    # Check that the update finished cleanly.
+    if [ $? = 0 ]; then
+        echo "Update ended cleanly."
+    else
+        echo "Udate ended with problems. Exiting..."
+        exit 1
+    fi
+    
+else
+    echo "Firefox update not needed."
+fi
+
+
+#-----------------------------------------------------------------------------
+# Post-update version check
+
+# Get the updated Firefox version
+firefox_version=$(firefox --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
+echo Updated versions: Firefox:$firefox_version Profile:$profile_version
+
+if [ "$(printf "%s\n" "$profile_version" "$firefox_version" | sort -V | head -n1)" != "$profile_version" ]; then
+    if [ "$profile_version" != "<UNKNOWN>" ]; then
+        # Version mimatch and it's a problem
+        echo "The installed version of Firefox still can't load the indicated profile. Exiting."
+        exit 1
+    fi
+fi
+
+
+#-----------------------------------------------------------------------------
+# Run Firefox with the indicated profile respecting the detected install method
+
+if [ "$ff_type" = "FLATPAK" ]; then
+    echo "Firefox detected via Flatpak."
+    THECMD="flatpak run --filesystem=\"$(pwd)\" org.mozilla.firefox -profile \"$(pwd)/PortableApps/FirefoxPortable/Data/profile\" $@"
+    echo $THECMD
+    eval $THECMD
+
+elif [ "$ff_type" = "SNAP" ]; then
+    echo "Firefox detected via Snap."
+    # The following command runs firefox via snap with the external profile
+    # It prompts the user for a password (only once, if needed) and cleans up after itself.
+    ./ff_snap_handler.lin.exe $@
+        
+elif [ "$ff_type" = "STANDARD" ]; then
+    THECMD="firefox -profile \"$(pwd)/PortableApps/FirefoxPortable/Data/profile\" $@"
+    echo $THECMD
+    eval $THECMD
+
+else
+    echo "Firefox is not installed through a known method (standard, Flatpak, or Snap)."
+    exit 1
+
+fi
