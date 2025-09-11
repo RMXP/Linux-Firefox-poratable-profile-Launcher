@@ -37,14 +37,17 @@ fi
 if flatpak list | grep -q "org.mozilla.firefox"; then
     echo "Firefox detected via Flatpak."
     ff_type="FLATPAK"
+    ff_cmd="flatpak run org.mozilla.firefox"
     
 elif snap list | grep -q "^firefox"; then
     echo "Firefox detected via Snap."
     ff_type="SNAP"
+    ff_cmd="snap run firefox"
         
 elif command -v firefox &> /dev/null; then
     echo Firefox detected through an unknown method. Assuming standard install.
     ff_type="STANDARD"
+    ff_cmd="firefox"
 
 else
     echo "Firefox is not installed through a known method (standard, Flatpak, or Snap)."
@@ -55,7 +58,7 @@ fi
 
 #-----------------------------------------------------------------------------
 # Get the installed Firefox version
-firefox_version=$(firefox --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
+firefox_version=$($ff_cmd --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
 
 
 #-----------------------------------------------------------------------------
@@ -111,7 +114,7 @@ fi
 # Post-update version check
 
 # Get the updated Firefox version
-firefox_version=$(firefox --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
+firefox_version=$($ff_cmd --version | awk '{print $3}' | awk -F. '{printf "%d.%d\n", $1, $2}')
 echo Updated versions: Firefox:$firefox_version Profile:$profile_version
 
 if [ "$(printf "%s\n" "$profile_version" "$firefox_version" | sort -V | head -n1)" != "$profile_version" ]; then
